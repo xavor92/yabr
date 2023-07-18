@@ -2,6 +2,13 @@
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
+#include <ESPmDNS.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
+
+// Fill and don't commit ;-)
+const char* ssid = "ssid";
+const char* password = "pw";
 
 #define PIN_DIR   4
 #define PIN_STEP  16
@@ -11,12 +18,50 @@
 
 Adafruit_MPU6050 mpu;
 
-void setup() {
-  Serial.begin(115200);
-  pinMode(PIN_DIR, OUTPUT);
-  pinMode(PIN_STEP, OUTPUT);
-  Wire.begin();
+void setup_ota() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+    Serial.println("Connection Failed! Rebooting...");
+    delay(5000);
+    ESP.restart();
+  }
+  Serial.println("Connected to wifi");
 
+  ArduinoOTA
+    .onStart([]() {
+      String type;
+      if (ArduinoOTA.getCommand() == U_FLASH)
+        type = "sketch";
+      else // U_SPIFFS
+        type = "filesystem";
+
+      // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+      Serial.println("Start updating " + type);
+    })
+    .onEnd([]() {
+      Serial.println("\nEnd");
+    })
+    .onProgress([](unsigned int progress, unsigned int total) {
+      Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+    })
+    .onError([](ota_error_t error) {
+      Serial.printf("Error[%u]: ", error);
+      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+      else if (error == OTA_END_ERROR) Serial.println("End Failed");
+    });
+
+  ArduinoOTA.begin();
+
+  Serial.println("Ready");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void setup_mpu6050() {
   if (!mpu.begin()) {
     Serial.println("Failed to find MPU6050 chip");
   }
@@ -83,7 +128,17 @@ void setup() {
   }
 
   Serial.println("");
-  delay(100);
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  // Setup pins for stepper driver
+  pinMode(PIN_DIR, OUTPUT);
+  pinMode(PIN_STEP, OUTPUT);
+
+  setup_ota();
+  setup_mpu6050();
 }
 
 void print_step_stuff(unsigned int steps, unsigned int direction) {
@@ -114,6 +169,8 @@ void loop() {
   // put your main code here, to run repeatedly
   int dir = 1;
   int steps = 200;
+  ArduinoOTA.handle();
+  Serial.println(".");
   
   rotate(steps, RIGHT);
   delay(1000);
