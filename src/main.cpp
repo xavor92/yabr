@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
 #include <Wire.h>
 
 #define PIN_DIR   4
@@ -7,12 +9,81 @@
 #define LEFT      0
 #define RIGHT     1
 
+Adafruit_MPU6050 mpu;
+
 void setup() {
-  // put your setup code here, to run once:
   Serial.begin(115200);
   pinMode(PIN_DIR, OUTPUT);
   pinMode(PIN_STEP, OUTPUT);
   Wire.begin();
+
+  if (!mpu.begin()) {
+    Serial.println("Failed to find MPU6050 chip");
+  }
+
+  // setup MPU
+  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+  Serial.print("Accelerometer range set to: ");
+  switch (mpu.getAccelerometerRange()) {
+  case MPU6050_RANGE_2_G:
+    Serial.println("+-2G");
+    break;
+  case MPU6050_RANGE_4_G:
+    Serial.println("+-4G");
+    break;
+  case MPU6050_RANGE_8_G:
+    Serial.println("+-8G");
+    break;
+  case MPU6050_RANGE_16_G:
+    Serial.println("+-16G");
+    break;
+  }
+
+  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+  Serial.print("Gyro range set to: ");
+  switch (mpu.getGyroRange()) {
+  case MPU6050_RANGE_250_DEG:
+    Serial.println("+- 250 deg/s");
+    break;
+  case MPU6050_RANGE_500_DEG:
+    Serial.println("+- 500 deg/s");
+    break;
+  case MPU6050_RANGE_1000_DEG:
+    Serial.println("+- 1000 deg/s");
+    break;
+  case MPU6050_RANGE_2000_DEG:
+    Serial.println("+- 2000 deg/s");
+    break;
+  }
+
+  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+  Serial.print("Filter bandwidth set to: ");
+  switch (mpu.getFilterBandwidth()) {
+  case MPU6050_BAND_260_HZ:
+    Serial.println("260 Hz");
+    break;
+  case MPU6050_BAND_184_HZ:
+    Serial.println("184 Hz");
+    break;
+  case MPU6050_BAND_94_HZ:
+    Serial.println("94 Hz");
+    break;
+  case MPU6050_BAND_44_HZ:
+    Serial.println("44 Hz");
+    break;
+  case MPU6050_BAND_21_HZ:
+    Serial.println("21 Hz");
+    break;
+  case MPU6050_BAND_10_HZ:
+    Serial.println("10 Hz");
+    break;
+  case MPU6050_BAND_5_HZ:
+    Serial.println("5 Hz");
+    break;
+  }
+
+  Serial.println("");
+  delay(100);
 }
 
 void print_step_stuff(unsigned int steps, unsigned int direction) {
@@ -39,28 +110,6 @@ void rotate(unsigned int steps, unsigned int direction) {
   }
 }
 
-#define MPU6050_ADDR        0x68
-#define MPU6050_REG_WHOAMI  0x75
-
-uint8_t read_byte(uint8_t chip, uint8_t reg, uint8_t *buffer) {;
-  uint8_t error;
-  Wire.beginTransmission(chip);
-  Wire.write(reg);
-  error = Wire.endTransmission();
-  if (error) {
-    Serial.print("Error in ");
-    Serial.print(__func__);
-    Serial.println(error);
-  }
-  Wire.requestFrom(chip, (uint8_t)1);
-
-  // Slave may send less than requested
-  if (Wire.available()) {
-      *buffer = Wire.read();    // Receive a byte as character
-  }
-  return error;
-}
-
 void loop() {
   // put your main code here, to run repeatedly
   int dir = 1;
@@ -70,8 +119,32 @@ void loop() {
   delay(1000);
   rotate(steps, LEFT);
   delay(1000);
-  uint8_t whoami;
-  read_byte(MPU6050_ADDR, MPU6050_REG_WHOAMI, &whoami);
-  Serial.println(whoami, HEX);
-  whoami = 0;
+
+  /* Get new sensor events with the readings */
+  sensors_event_t a, g, temp;
+  mpu.getEvent(&a, &g, &temp);
+
+  /* Print out the values */
+  Serial.print("Acceleration X: ");
+  Serial.print(a.acceleration.x);
+  Serial.print(", Y: ");
+  Serial.print(a.acceleration.y);
+  Serial.print(", Z: ");
+  Serial.print(a.acceleration.z);
+  Serial.println(" m/s^2");
+
+  Serial.print("Rotation X: ");
+  Serial.print(g.gyro.x);
+  Serial.print(", Y: ");
+  Serial.print(g.gyro.y);
+  Serial.print(", Z: ");
+  Serial.print(g.gyro.z);
+  Serial.println(" rad/s");
+
+  Serial.print("Temperature: ");
+  Serial.print(temp.temperature);
+  Serial.println(" degC");
+
+  Serial.println("");
+  delay(500);
 }
