@@ -149,6 +149,14 @@ void setup_gpio() {
   pinMode(PIN_STEP1, OUTPUT);
   pinMode(PIN_DIR2, OUTPUT);
   pinMode(PIN_STEP2, OUTPUT);
+  pinMode(PIN_STEPPER_EN, OUTPUT);
+  pinMode(PIN_STEP_SELECT_M0, OUTPUT);
+  pinMode(PIN_STEP_SELECT_M1, OUTPUT);
+  pinMode(PIN_STEP_SELECT_M2, OUTPUT);
+
+  digitalWrite(PIN_STEP_SELECT_M0, LOW);
+  digitalWrite(PIN_STEP_SELECT_M1, LOW);
+  digitalWrite(PIN_STEP_SELECT_M2, LOW); 
 
   pinMode(PIN_LED1, OUTPUT);
   pinMode(PIN_LED2, OUTPUT);
@@ -189,15 +197,31 @@ void rotate(unsigned int steps, unsigned int direction) {
   }
 }
 
+void enable_motors() {
+  digitalWrite(PIN_STEPPER_EN, LOW);
+  digitalWrite(PIN_LED1, LOW);
+}
+
+void disable_motors() {
+  digitalWrite(PIN_STEPPER_EN, HIGH);
+  digitalWrite(PIN_LED1, HIGH);
+}
+
 void loop() {
   // put your main code here, to run repeatedly
-  int dir = 1;
   int steps = 200;
   ArduinoOTA.handle();
-  
+
+  enable_motors();
   rotate(steps, RIGHT);
+  disable_motors();
+
   delay(1000);
+
+  enable_motors();
   rotate(steps, LEFT);
+  disable_motors();
+
   delay(1000);
 
   /* Get new sensor events with the readings */
