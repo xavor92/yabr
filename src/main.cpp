@@ -8,6 +8,12 @@
 
 // Fill and don't commit ;-)
 
+#define LEDC_CHANNEL_MOTOR1             0
+#define LEDC_CHANNEL_MOTOR2             1
+#define LEDC_CHANNEL_RESOLUTION_12_BIT  12
+#define LEDC_CHANNEL_DUTY               2048 // (2 ^ LEDC_CHANNEL_RESOLUTION_12_BIT) / 2 
+#define LEDC_CHANNEL_DEFAULT_SPEED      200
+
 #define PIN_STEPPER_EN  27
 #define PIN_STEP_SELECT_M0 26
 #define PIN_STEP_SELECT_M1 25
@@ -145,21 +151,34 @@ void setup_mpu6050() {
 
 void setup_gpio() {
   // Setup pins for stepper driver
-  pinMode(PIN_DIR1, OUTPUT);
-  pinMode(PIN_STEP1, OUTPUT);
-  pinMode(PIN_DIR2, OUTPUT);
-  pinMode(PIN_STEP2, OUTPUT);
   pinMode(PIN_STEPPER_EN, OUTPUT);
+  digitalWrite(PIN_STEPPER_EN, HIGH);
+
+  pinMode(PIN_DIR1, OUTPUT);
+  pinMode(PIN_DIR2, OUTPUT);
+
+  pinMode(PIN_STEP1, OUTPUT);
+  pinMode(PIN_STEP2, OUTPUT);
+
+  ledcSetup(LEDC_CHANNEL_MOTOR1, LEDC_CHANNEL_DEFAULT_SPEED, LEDC_CHANNEL_RESOLUTION_12_BIT);
+  ledcSetup(LEDC_CHANNEL_MOTOR2, LEDC_CHANNEL_DEFAULT_SPEED, LEDC_CHANNEL_RESOLUTION_12_BIT);
+
+  ledcAttachPin(PIN_LED1, LEDC_CHANNEL_MOTOR1);
+  ledcAttachPin(PIN_STEP1, LEDC_CHANNEL_MOTOR1);
+  ledcAttachPin(PIN_STEP2, LEDC_CHANNEL_MOTOR2);
+
+  ledcWrite(LEDC_CHANNEL_MOTOR1, LEDC_CHANNEL_DUTY);
+  ledcWrite(LEDC_CHANNEL_MOTOR2, LEDC_CHANNEL_DUTY);
+
   pinMode(PIN_STEP_SELECT_M0, OUTPUT);
   pinMode(PIN_STEP_SELECT_M1, OUTPUT);
   pinMode(PIN_STEP_SELECT_M2, OUTPUT);
-
   digitalWrite(PIN_STEP_SELECT_M0, LOW);
   digitalWrite(PIN_STEP_SELECT_M1, LOW);
   digitalWrite(PIN_STEP_SELECT_M2, LOW); 
 
-  pinMode(PIN_LED1, OUTPUT);
   pinMode(PIN_LED2, OUTPUT);
+  digitalWrite(PIN_LED2, HIGH); 
 }
 
 void setup() {
@@ -170,41 +189,46 @@ void setup() {
   setup_mpu6050();
 }
 
-void print_step_stuff(unsigned int steps, unsigned int direction) {
-  Serial.print("Starting location for ");
-  Serial.print(steps);
-  Serial.print(" to ");
+void print_step_stuff(unsigned int time_in_ms, unsigned int steps_per_second, unsigned int direction) {
+  Serial.print("Starting rotation for ");
+  Serial.print(time_in_ms);
+  Serial.print("ms to ");
   if (direction != LEFT) {
-    Serial.println("right");
+    Serial.print("right ");
   } else {
-    Serial.println("left");
+    Serial.print("left ");
   }
-}
-
-void rotate(unsigned int steps, unsigned int direction) {
-  print_step_stuff(steps, direction);
-
-  digitalWrite(PIN_DIR1, direction == LEFT);
-  digitalWrite(PIN_DIR2, direction == LEFT);
-
-  for (int i = 0; i < steps; i++) {
-    digitalWrite(PIN_STEP1, HIGH);
-    digitalWrite(PIN_STEP2, HIGH);
-    delay(1);
-    digitalWrite(PIN_STEP1, LOW);
-    digitalWrite(PIN_STEP2, LOW);
-    delay(1);
-  }
+  Serial.print("at ");
+  Serial.print(steps_per_second);
+  Serial.println(" steps/s");
 }
 
 void enable_motors() {
   digitalWrite(PIN_STEPPER_EN, LOW);
-  digitalWrite(PIN_LED1, LOW);
+  digitalWrite(PIN_LED2, LOW);
 }
 
 void disable_motors() {
   digitalWrite(PIN_STEPPER_EN, HIGH);
-  digitalWrite(PIN_LED1, HIGH);
+  digitalWrite(PIN_LED2, HIGH);
+}
+
+void rotate(unsigned int time_in_ms, unsigned int steps_per_second, unsigned int direction) {
+  print_step_stuff(time_in_ms, steps_per_second, direction);
+
+  digitalWrite(PIN_DIR1, direction == LEFT);
+  digitalWrite(PIN_DIR2, direction != LEFT);
+
+  ledcChangeFrequency(LEDC_CHANNEL_MOTOR1, steps_per_second, LEDC_CHANNEL_RESOLUTION_12_BIT);
+  ledcChangeFrequency(LEDC_CHANNEL_MOTOR2, steps_per_second / 8, LEDC_CHANNEL_RESOLUTION_12_BIT);
+
+  enable_motors();
+
+  delay(time_in_ms);
+
+  disable_motors();
+
+  Serial.println("Stopped rotating");
 }
 
 void loop() {
@@ -212,17 +236,12 @@ void loop() {
   int steps = 200;
   ArduinoOTA.handle();
 
-  enable_motors();
-  rotate(steps, RIGHT);
-  disable_motors();
+  rotate(2000, LEDC_CHANNEL_DEFAULT_SPEED, RIGHT);
+  delay(2000);
 
-  delay(1000);
+  rotate(2000, LEDC_CHANNEL_DEFAULT_SPEED, LEFT);
+  delay(2000);
 
-  enable_motors();
-  rotate(steps, LEFT);
-  disable_motors();
-
-  delay(1000);
 
   /* Get new sensor events with the readings */
   sensors_event_t a, g, temp;
