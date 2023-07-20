@@ -7,11 +7,24 @@
 #include <ArduinoOTA.h>
 
 // Fill and don't commit ;-)
-const char* ssid = "ssid";
-const char* password = "pw";
 
-#define PIN_DIR   4
-#define PIN_STEP  16
+#define PIN_STEPPER_EN  27
+#define PIN_STEP_SELECT_M0 26
+#define PIN_STEP_SELECT_M1 25
+#define PIN_STEP_SELECT_M2 33
+
+#define PIN_DIR1    4
+#define PIN_STEP1   16
+#define PIN_DIR2    15
+#define PIN_STEP2   2
+
+#define PIN_LED1    19
+#define PIN_LED2    18
+
+#define PIN_BUTTON1 ERROR("Pin 6 can't be used")
+#define PIN_BUTTON2 ERROR("Pin 7 can't be used")
+
+#define PIN_ACC_INT 23
 
 #define LEFT      0
 #define RIGHT     1
@@ -130,13 +143,21 @@ void setup_mpu6050() {
   Serial.println("");
 }
 
+void setup_gpio() {
+  // Setup pins for stepper driver
+  pinMode(PIN_DIR1, OUTPUT);
+  pinMode(PIN_STEP1, OUTPUT);
+  pinMode(PIN_DIR2, OUTPUT);
+  pinMode(PIN_STEP2, OUTPUT);
+
+  pinMode(PIN_LED1, OUTPUT);
+  pinMode(PIN_LED2, OUTPUT);
+}
+
 void setup() {
   Serial.begin(115200);
 
-  // Setup pins for stepper driver
-  pinMode(PIN_DIR, OUTPUT);
-  pinMode(PIN_STEP, OUTPUT);
-
+  setup_gpio();
   setup_ota();
   setup_mpu6050();
 }
@@ -155,12 +176,15 @@ void print_step_stuff(unsigned int steps, unsigned int direction) {
 void rotate(unsigned int steps, unsigned int direction) {
   print_step_stuff(steps, direction);
 
-  digitalWrite(PIN_DIR, direction == LEFT);
+  digitalWrite(PIN_DIR1, direction == LEFT);
+  digitalWrite(PIN_DIR2, direction == LEFT);
 
   for (int i = 0; i < steps; i++) {
-    digitalWrite(PIN_STEP, HIGH);
+    digitalWrite(PIN_STEP1, HIGH);
+    digitalWrite(PIN_STEP2, HIGH);
     delay(1);
-    digitalWrite(PIN_STEP, LOW);
+    digitalWrite(PIN_STEP1, LOW);
+    digitalWrite(PIN_STEP2, LOW);
     delay(1);
   }
 }
@@ -170,7 +194,6 @@ void loop() {
   int dir = 1;
   int steps = 200;
   ArduinoOTA.handle();
-  Serial.println(".");
   
   rotate(steps, RIGHT);
   delay(1000);
