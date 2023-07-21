@@ -14,7 +14,7 @@ const char* password = "pw";
 #define LEDC_CHANNEL_MOTOR1               1
 #define LEDC_CHANNEL_MOTOR2               2
 #define LEDC_CHANNEL_RESOLUTION_12_BIT    12
-#define LEDC_CHANNEL_DUTY                 2048 // (2 ^ LEDC_CHANNEL_RESOLUTION_12_BIT) / 2 
+#define LEDC_CHANNEL_DUTY                 2048 // (2 ^ LEDC_CHANNEL_RESOLUTION_12_BIT) / 2
 #define LEDC_CHANNEL_DEFAULT_SPEED        200
 
 #define PIN_STEPPER_EN  27
@@ -187,10 +187,10 @@ void setup_gpio() {
   pinMode(PIN_STEP_SELECT_M2, OUTPUT);
   digitalWrite(PIN_STEP_SELECT_M0, LOW);
   digitalWrite(PIN_STEP_SELECT_M1, LOW);
-  digitalWrite(PIN_STEP_SELECT_M2, HIGH); 
+  digitalWrite(PIN_STEP_SELECT_M2, HIGH);
 
   pinMode(PIN_LED2, OUTPUT);
-  digitalWrite(PIN_LED2, HIGH); 
+  digitalWrite(PIN_LED2, HIGH);
 }
 
 void setup() {
@@ -201,10 +201,8 @@ void setup() {
   setup_mpu6050();
 }
 
-void print_step_stuff(unsigned int time_in_ms, unsigned int steps_per_second, unsigned int direction) {
-  Serial.print("Starting rotation for ");
-  Serial.print(time_in_ms);
-  Serial.print("ms to ");
+void print_step_stuff(unsigned int steps_per_second, unsigned int direction) {
+  Serial.print("Starting rotation to ");
   if (direction != LEFT) {
     Serial.print("right ");
   } else {
@@ -225,17 +223,19 @@ void disable_motors() {
   digitalWrite(PIN_LED2, HIGH);
 }
 
-void rotate(unsigned int time_in_ms, unsigned int steps_per_second, unsigned int direction) {
+void rotate(unsigned int steps_per_second, unsigned int direction) {
   uint32_t error, freq;
   uint8_t channel;
 
   if (!steps_per_second) {
       /* PWM can't handle freq of 0 */
+#ifdef DEBUG
       Serial.println("steps_per_second is zero");
+#endif
       return;
   }
 
-  print_step_stuff(time_in_ms, steps_per_second, direction);
+  print_step_stuff(steps_per_second, direction);
 
   digitalWrite(PIN_DIR1, direction == LEFT);
   digitalWrite(PIN_DIR2, direction != LEFT);
@@ -246,10 +246,12 @@ void rotate(unsigned int time_in_ms, unsigned int steps_per_second, unsigned int
       Serial.print("Error on line ");
       Serial.println(__LINE__);
     } else {
+#ifdef DEBUG
       Serial.print("Frequency on ");
       Serial.print(channel);
       Serial.print(" set to ");
       Serial.println(error);
+#endif
     };
   }
 
@@ -265,7 +267,7 @@ float get_z_angle() {
 
   /* Calculate a z angle */
   z_angle = atan(sqrt(a.acceleration.x * a.acceleration.x + a.acceleration.y * a.acceleration.y) / a.acceleration.z);
-  
+
   /* Set a "base" orientation at startup */
   if (base_z <= 0.01 && base_z >= -0.01) {
     base_z = z_angle;
@@ -280,15 +282,37 @@ float get_z_angle() {
     z_real = z_angle - base_z;
   }
 
+#ifdef DEBUG
   Serial.print("z 'real': ");
   if (z_real < 0) { Serial.print("-"); } else { Serial.print(" "); };
   Serial.println(abs(z_real), 6);
+#endif
+
   return z_real;
+}
+
+int control_function(float z_angle) {
+  int steps_per_s = int32_t(kP * (z_angle));
+  return steps_per_s;
+}
+
+void check_control_loop_speed() {
+  static int cnt;
+  static unsigned long current_second;
+  cnt++;
+
+  if (millis() / 1000 > current_second) {
+    current_second = millis() / 1000;
+    Serial.print("Last second had "); Serial.print(cnt); Serial.println("loops.");
+    cnt = 0;
+  }
 }
 
 void loop() {
   int32_t steps_per_s;
   float angle;
+
+  check_control_loop_speed();
 
   if (millis() < OTA_TIMEOUT) {
     ArduinoOTA.handle();
@@ -296,6 +320,7 @@ void loop() {
 
   angle = get_z_angle();
 
-  steps_per_s = int32_t(kP * (angle));
-  rotate(10, abs(steps_per_s), steps_per_s < 0 ? RIGHT : LEFT);
+  steps_per_s = control_function(angle);
+
+  rotate(abs(steps_per_s), steps_per_s < 0 ? RIGHT : LEFT);
 }
