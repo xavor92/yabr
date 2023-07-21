@@ -38,7 +38,14 @@ const char* password = "pw";
 #define LEFT      0
 #define RIGHT     1
 
-unsigned long start_time = 0;
+/* Stop OTA after timeout */
+#define OTA_TIMEOUT 15000
+
+/* Permanent Z offset, set at boot */
+float base_z = 0.00;
+
+/* Controller setup */
+float kP = 20000;
 
 Adafruit_MPU6050 mpu;
 
@@ -249,22 +256,11 @@ void rotate(unsigned int time_in_ms, unsigned int steps_per_second, unsigned int
   enable_motors();
 }
 
-float base_z = 0.00, z_angle, z_real;
-float kP = 20000;
-int i;
-
-void loop() {
-  if (!start_time) start_time = millis();
-
-  if (millis() - start_time < 10000) {
-    ArduinoOTA.handle();
-  }
-
-  // put your main code here, to run repeatedly
-  int32_t steps_per_s;
+float get_z_angle() {
+  float z_angle, z_real;
+  sensors_event_t a, g, temp;
 
   /* Get new sensor events with the readings */
-  sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
 
   /* Calculate a z angle */
@@ -287,8 +283,19 @@ void loop() {
   Serial.print("z 'real': ");
   if (z_real < 0) { Serial.print("-"); } else { Serial.print(" "); };
   Serial.println(abs(z_real), 6);
+  return z_real;
+}
 
-  steps_per_s = int32_t(kP * (z_real));
+void loop() {
+  int32_t steps_per_s;
+  float angle;
+
+  if (millis() < OTA_TIMEOUT) {
+    ArduinoOTA.handle();
+  }
+
+  angle = get_z_angle();
+
+  steps_per_s = int32_t(kP * (angle));
   rotate(10, abs(steps_per_s), steps_per_s < 0 ? RIGHT : LEFT);
-
 }
