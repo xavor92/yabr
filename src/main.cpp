@@ -5,14 +5,17 @@
 #include <ESPmDNS.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
+#include <math.h>
 
 // Fill and don't commit ;-)
+const char* ssid = "ssid";
+const char* password = "pw";
 
-#define LEDC_CHANNEL_MOTOR1             0
-#define LEDC_CHANNEL_MOTOR2             1
-#define LEDC_CHANNEL_RESOLUTION_12_BIT  12
-#define LEDC_CHANNEL_DUTY               2048 // (2 ^ LEDC_CHANNEL_RESOLUTION_12_BIT) / 2 
-#define LEDC_CHANNEL_DEFAULT_SPEED      200
+#define LEDC_CHANNEL_MOTOR1               1
+#define LEDC_CHANNEL_MOTOR2               2
+#define LEDC_CHANNEL_RESOLUTION_12_BIT    12
+#define LEDC_CHANNEL_DUTY                 2048 // (2 ^ LEDC_CHANNEL_RESOLUTION_12_BIT) / 2 
+#define LEDC_CHANNEL_DEFAULT_SPEED        200
 
 #define PIN_STEPPER_EN  27
 #define PIN_STEP_SELECT_M0 26
@@ -34,6 +37,8 @@
 
 #define LEFT      0
 #define RIGHT     1
+
+unsigned long start_time = 0;
 
 Adafruit_MPU6050 mpu;
 
@@ -86,7 +91,7 @@ void setup_mpu6050() {
   }
 
   // setup MPU
-  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+  mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
   Serial.print("Accelerometer range set to: ");
   switch (mpu.getAccelerometerRange()) {
   case MPU6050_RANGE_2_G:
@@ -103,7 +108,7 @@ void setup_mpu6050() {
     break;
   }
 
-  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+  mpu.setGyroRange(MPU6050_RANGE_250_DEG);
   Serial.print("Gyro range set to: ");
   switch (mpu.getGyroRange()) {
   case MPU6050_RANGE_250_DEG:
@@ -175,7 +180,7 @@ void setup_gpio() {
   pinMode(PIN_STEP_SELECT_M2, OUTPUT);
   digitalWrite(PIN_STEP_SELECT_M0, LOW);
   digitalWrite(PIN_STEP_SELECT_M1, LOW);
-  digitalWrite(PIN_STEP_SELECT_M2, LOW); 
+  digitalWrite(PIN_STEP_SELECT_M2, HIGH); 
 
   pinMode(PIN_LED2, OUTPUT);
   digitalWrite(PIN_LED2, HIGH); 
@@ -214,60 +219,76 @@ void disable_motors() {
 }
 
 void rotate(unsigned int time_in_ms, unsigned int steps_per_second, unsigned int direction) {
+  uint32_t error, freq;
+  uint8_t channel;
+
+  if (!steps_per_second) {
+      /* PWM can't handle freq of 0 */
+      Serial.println("steps_per_second is zero");
+      return;
+  }
+
   print_step_stuff(time_in_ms, steps_per_second, direction);
 
   digitalWrite(PIN_DIR1, direction == LEFT);
   digitalWrite(PIN_DIR2, direction != LEFT);
 
-  ledcChangeFrequency(LEDC_CHANNEL_MOTOR1, steps_per_second, LEDC_CHANNEL_RESOLUTION_12_BIT);
-  ledcChangeFrequency(LEDC_CHANNEL_MOTOR2, steps_per_second / 8, LEDC_CHANNEL_RESOLUTION_12_BIT);
+  for(channel = 1; channel <= LEDC_CHANNEL_MOTOR2; channel++) {
+    error = ledcChangeFrequency(channel, steps_per_second, LEDC_CHANNEL_RESOLUTION_12_BIT);
+    if (!error) {
+      Serial.print("Error on line ");
+      Serial.println(__LINE__);
+    } else {
+      Serial.print("Frequency on ");
+      Serial.print(channel);
+      Serial.print(" set to ");
+      Serial.println(error);
+    };
+  }
 
   enable_motors();
-
-  delay(time_in_ms);
-
-  disable_motors();
-
-  Serial.println("Stopped rotating");
 }
 
+float base_z = 0.00, z_angle, z_real;
+float kP = 20000;
+int i;
+
 void loop() {
+  if (!start_time) start_time = millis();
+
+  if (millis() - start_time < 10000) {
+    ArduinoOTA.handle();
+  }
+
   // put your main code here, to run repeatedly
-  int steps = 200;
-  ArduinoOTA.handle();
-
-  rotate(2000, LEDC_CHANNEL_DEFAULT_SPEED, RIGHT);
-  delay(2000);
-
-  rotate(2000, LEDC_CHANNEL_DEFAULT_SPEED, LEFT);
-  delay(2000);
-
+  int32_t steps_per_s;
 
   /* Get new sensor events with the readings */
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
 
-  /* Print out the values */
-  Serial.print("Acceleration X: ");
-  Serial.print(a.acceleration.x);
-  Serial.print(", Y: ");
-  Serial.print(a.acceleration.y);
-  Serial.print(", Z: ");
-  Serial.print(a.acceleration.z);
-  Serial.println(" m/s^2");
+  /* Calculate a z angle */
+  z_angle = atan(sqrt(a.acceleration.x * a.acceleration.x + a.acceleration.y * a.acceleration.y) / a.acceleration.z);
+  
+  /* Set a "base" orientation at startup */
+  if (base_z <= 0.01 && base_z >= -0.01) {
+    base_z = z_angle;
+  }
 
-  Serial.print("Rotation X: ");
-  Serial.print(g.gyro.x);
-  Serial.print(", Y: ");
-  Serial.print(g.gyro.y);
-  Serial.print(", Z: ");
-  Serial.print(g.gyro.z);
-  Serial.println(" rad/s");
+  /* Rotate vector to have 0 pointing "upwards" with a range of -Pi/2 to Pi/2 */
+  if (z_angle - base_z < -M_PI_2) {
+    z_real = z_angle - base_z + M_PI;
+  } else if (z_angle - base_z > M_PI_2) {
+    z_real = z_angle - base_z - M_PI;
+  } else {
+    z_real = z_angle - base_z;
+  }
 
-  Serial.print("Temperature: ");
-  Serial.print(temp.temperature);
-  Serial.println(" degC");
+  Serial.print("z 'real': ");
+  if (z_real < 0) { Serial.print("-"); } else { Serial.print(" "); };
+  Serial.println(abs(z_real), 6);
 
-  Serial.println("");
-  delay(500);
+  steps_per_s = int32_t(kP * (z_real));
+  rotate(10, abs(steps_per_s), steps_per_s < 0 ? RIGHT : LEFT);
+
 }
